@@ -49,9 +49,11 @@ export default function LandingPage() {
     setLoading(true);
     const code = generateCode();
 
+    const creatorName = user.user_metadata?.full_name ?? user.email ?? "";
+
     const { error: err } = await supabase
       .from("couples")
-      .insert({ code, creator_id: user.id });
+      .insert({ code, creator_id: user.id, creator_name: creatorName });
 
     if (err) {
       setError("코드 생성에 실패했어요. 다시 시도해주세요.");
@@ -102,9 +104,11 @@ export default function LandingPage() {
       return;
     }
 
+    const partnerName = user.user_metadata?.full_name ?? user.email ?? "";
+
     const { error: joinErr } = await supabase
       .from("couples")
-      .update({ partner_id: user.id })
+      .update({ partner_id: user.id, partner_name: partnerName })
       .eq("id", couple.id);
 
     if (joinErr) {
