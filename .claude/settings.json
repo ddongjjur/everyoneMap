@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:*)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(cat /tmp/dev*.log)",
+      "Bash(sleep *)",
+      "Bash(npx tsc --noEmit)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(chmod -R 777:*)",
+      "Bash(sudo:*)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/codeit_intern/everyoneMap && npm run build 2>&1 | tail -5"
+          }
+        ]
+      }
+    ]
+  }
+}
