@@ -103,7 +103,6 @@ export type Database = {
         };
         Relationships: [];
       };
-    };
       grapes: {
         Row: {
           id: string;
@@ -155,7 +154,6 @@ export type Database = {
         };
         Relationships: [];
       };
-    };
       grape_requests: {
         Row: {
           id: string;
