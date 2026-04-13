@@ -33,6 +33,21 @@ interface RegionDetailMapProps {
 const WIDTH = 400;
 const HEIGHT = 400;
 
+// 특정 지역의 투영 범위를 수동으로 제한 (먼 섬 등으로 인한 축소 방지)
+// [서쪽경도, 남쪽위도, 동쪽경도, 북쪽위도]
+const CLIP_BOUNDS: Record<string, [number, number, number, number]> = {
+  "23": [126.05, 37.1, 127.0, 37.95], // 인천: 강화군 포함, 옹진군 먼 섬 제외
+};
+
+// 라벨 SVG 좌표 오버라이드 { 시도코드: { 지역명: [x, y] } }
+const SVG_LABEL_OVERRIDES: Record<string, Record<string, [number, number]>> = {
+  "23": {
+    "옹진군": [180, 320],
+    "강화군": [170, 117.84617533478942],
+    "중구":   [180, 227.72856075280404],
+  },
+};
+
 /** 도(道) 선택 시: 구 단위 features를 부모 시/군 단위로 그룹핑 */
 function groupByCity(features: SigunguFeature[]): CityGroup[] {
   const map = new Map<string, CityGroup>();
@@ -106,9 +121,25 @@ export default function RegionDetailMap({
           type: "FeatureCollection",
           features: filtered,
         };
+
+        const clip = CLIP_BOUNDS[provinceCode];
+        const fitTarget = clip
+          ? {
+              type: "Feature",
+              geometry: {
+                type: "MultiPoint",
+                coordinates: [
+                  [clip[0], clip[1]], // 남서
+                  [clip[2], clip[3]], // 북동
+                ],
+              },
+              properties: {},
+            }
+          : subCollection;
+
         const projection = geoMercator().fitExtent(
           [[10, 10], [WIDTH - 10, HEIGHT - 10]],
-          subCollection as GeoPermissibleObjects
+          fitTarget as GeoPermissibleObjects
         );
         const pathGen = geoPath(projection);
 
@@ -197,6 +228,10 @@ export default function RegionDetailMap({
                 ? group.name                        // 중구, 해운대구 그대로
                 : group.name.replace(/[시군]$/, ""); // 수원시→수원, 홍천군→홍천
 
+              const labelOverride = SVG_LABEL_OVERRIDES[provinceCode]?.[group.name];
+              const lx = labelOverride ? labelOverride[0] : centroid?.[0];
+              const ly = labelOverride ? labelOverride[1] : centroid?.[1];
+
               return (
                 <g key={group.key}>
                   <path
@@ -210,10 +245,10 @@ export default function RegionDetailMap({
                     onMouseEnter={() => setHoveredKey(group.key)}
                     onMouseLeave={() => setHoveredKey(null)}
                   />
-                  {centroid && (
+                  {lx && ly && (
                     <text
-                      x={centroid[0]}
-                      y={centroid[1]}
+                      x={lx}
+                      y={ly}
                       textAnchor="middle"
                       dominantBaseline="middle"
                       fontSize={isMetro ? 8 : 9}
