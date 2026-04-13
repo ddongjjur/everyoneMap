@@ -104,6 +104,79 @@ export type Database = {
         Relationships: [];
       };
     };
+      grapes: {
+        Row: {
+          id: string;
+          couple_id: string;
+          small_count: number;
+          large_exchanged: number;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          couple_id: string;
+          small_count?: number;
+          large_exchanged?: number;
+          updated_at?: string;
+        };
+        Update: {
+          small_count?: number;
+          large_exchanged?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      coupons: {
+        Row: {
+          id: string;
+          couple_id: string;
+          grape_count: number;
+          issued_at: string;
+          used: boolean;
+          used_at: string | null;
+          used_place: string | null;
+          used_amount: number | null;
+        };
+        Insert: {
+          id?: string;
+          couple_id: string;
+          grape_count?: number;
+          issued_at?: string;
+          used?: boolean;
+          used_at?: string | null;
+          used_place?: string | null;
+          used_amount?: number | null;
+        };
+        Update: {
+          used?: boolean;
+          used_at?: string | null;
+          used_place?: string | null;
+          used_amount?: number | null;
+        };
+        Relationships: [];
+      };
+    };
+      grape_requests: {
+        Row: {
+          id: string;
+          couple_id: string;
+          requester_id: string;
+          status: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          couple_id: string;
+          requester_id: string;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          status?: string;
+        };
+        Relationships: [];
+      };
+    };
     Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: Record<string, never>;

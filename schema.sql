@@ -103,6 +103,33 @@ CREATE TRIGGER city_records_updated_at
   BEFORE UPDATE ON public.city_records
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- 포도알 테이블
+CREATE TABLE public.grapes (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  couple_id   UUID REFERENCES public.couples(id) ON DELETE CASCADE UNIQUE NOT NULL,
+  small_count INTEGER DEFAULT 0 NOT NULL,
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.grapes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "커플 멤버만 접근" ON public.grapes
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.couples WHERE id = couple_id
+      AND (creator_id = auth.uid() OR partner_id = auth.uid()))
+  );
+
+-- 쿠폰 테이블
+CREATE TABLE public.coupons (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  couple_id  UUID REFERENCES public.couples(id) ON DELETE CASCADE NOT NULL,
+  issued_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "커플 멤버만 접근" ON public.coupons
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.couples WHERE id = couple_id
+      AND (creator_id = auth.uid() OR partner_id = auth.uid()))
+  );
+
 -- =============================================
 -- Supabase Storage: 사진 버킷 생성
 -- Dashboard > Storage > New bucket

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 
 const tabs = [
   { href: "/main/map", label: "지도", icon: "🗺️" },
-  { href: "/main/screen2", label: "추억", icon: "📷" },
+  { href: "/main/grapes", label: "포도송이", icon: "🍇" },
   { href: "/main/screen3", label: "우리", icon: "💑" },
 ];
 
