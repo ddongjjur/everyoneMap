@@ -278,6 +278,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
       const files = (e.target as HTMLInputElement).files;
       if (!files) return;
       setUploading(true);
+
       for (const file of Array.from(files)) {
         const ext = file.name.split(".").pop();
         const path = `${recordId}/${Date.now()}.${ext}`;

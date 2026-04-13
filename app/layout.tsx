@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "모두의 지도 | EveryoneMap",
+  title: "우리의 지도 | Our Journey",
   description: "우리만의 데이트 & 여행을 기록하는 지도",
 };
 
