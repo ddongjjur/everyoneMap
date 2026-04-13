@@ -14,6 +14,7 @@ const COUPON_UNIT = 100000;
 interface GrapeRequest {
   id: string;
   requester_id: string;
+  target_user_id: string | null;
   status: string;
 }
 
