@@ -219,20 +219,29 @@ export default function Screen2Page() {
       if (!couple) return;
       setCoupleId(couple.id);
 
+      // 내 판만 upsert (couple_id + user_id)
       await supabase.from("grapes")
-        .upsert({ couple_id: couple.id }, { onConflict: "couple_id", ignoreDuplicates: true });
+        .upsert(
+          { couple_id: couple.id, user_id: user.id },
+          { onConflict: "couple_id,user_id", ignoreDuplicates: true }
+        );
 
       const { data: g } = await supabase.from("grapes")
-        .select("*").eq("couple_id", couple.id).single();
+        .select("*")
+        .eq("couple_id", couple.id)
+        .eq("user_id", user.id)
+        .single();
       if (g) {
         setGrapeId(g.id);
         setSmallCount(g.small_count);
         setLargeExchanged(g.large_exchanged ?? 0);
       }
 
+      // 내 쿠폰만
       const { data: couponData } = await supabase.from("coupons")
         .select("id, grape_count, issued_at, used, used_at, used_place, used_amount")
         .eq("couple_id", couple.id)
+        .eq("user_id", user.id)
         .order("issued_at", { ascending: false });
       setCoupons((couponData ?? []) as Coupon[]);
 
@@ -246,7 +255,10 @@ export default function Screen2Page() {
           { event: "*", schema: "public", table: "grape_requests", filter: `couple_id=eq.${couple.id}` },
           async () => {
             const { data: fresh } = await supabase.from("grapes")
-              .select("small_count, large_exchanged").eq("couple_id", couple.id).single();
+              .select("small_count, large_exchanged")
+              .eq("couple_id", couple.id)
+              .eq("user_id", user.id)
+              .single();
             if (fresh) {
               setSmallCount(fresh.small_count);
               setLargeExchanged(fresh.large_exchanged ?? 0);
@@ -270,26 +282,36 @@ export default function Screen2Page() {
   const smallOnHand   = progress % 5;
   const mediumOnHand  = Math.floor(progress / 5);
 
-  // 포도알 추가 요청 (상대방 승인 필요)
+  // 포도알 추가 요청 — 내 판에 추가 요청, 상대방 승인 필요
   const handleRequestGrape = async () => {
     if (!coupleId || !myUserId || adding || pendingRequest) return;
     setAdding(true);
-    await supabase.from("grape_requests")
-      .insert({ couple_id: coupleId, requester_id: myUserId, status: "pending" });
+    await supabase.from("grape_requests").insert({
+      couple_id: coupleId,
+      requester_id: myUserId,
+      target_user_id: myUserId, // 내 판에 추가
+      status: "pending",
+    });
     setAdding(false);
   };
 
-  // 승인
+  // 승인 — target_user_id 의 grapes 레코드를 업데이트
   const handleApprove = async () => {
-    if (!incomingRequest || !grapeId || approving) return;
+    if (!incomingRequest || !coupleId || approving) return;
     setApproving(true);
-    const newCount = smallCount + 1;
+    const targetId = incomingRequest.target_user_id ?? incomingRequest.requester_id;
+
     await supabase.from("grapes")
-      .update({ small_count: newCount, updated_at: new Date().toISOString() })
-      .eq("id", grapeId);
+      .update({ small_count: smallCount + 1, updated_at: new Date().toISOString() })
+      .eq("couple_id", coupleId)
+      .eq("user_id", targetId);
+
     await supabase.from("grape_requests")
       .update({ status: "approved" }).eq("id", incomingRequest.id);
-    setSmallCount(newCount);
+
+    // 승인된 대상이 나 자신이면 로컬 상태도 업데이트
+    if (targetId === myUserId) setSmallCount((n) => n + 1);
+
     setIncomingRequest(null);
     setApproving(false);
   };
@@ -310,7 +332,7 @@ export default function Screen2Page() {
       .update({ large_exchanged: newExchanged, updated_at: new Date().toISOString() })
       .eq("id", grapeId);
     const { data: newCoupon } = await supabase.from("coupons")
-      .insert({ couple_id: coupleId, grape_count: exchangeCount })
+      .insert({ couple_id: coupleId, user_id: myUserId, grape_count: exchangeCount })
       .select("id, grape_count, issued_at, used, used_at, used_place, used_amount")
       .single();
     if (newCoupon) setCoupons((prev) => [newCoupon as Coupon, ...prev]);

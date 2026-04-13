@@ -24,10 +24,20 @@ interface RegionDetailMapProps {
   provinceName: string;
   provinceEmoji: string;
   provinceColor: string;
+  provinceStroke?: string;
   isMetro: boolean;
   onSelectCity: (cityId: string, cityName: string) => void;
   onBack: () => void;
-  visitedCities?: string[];
+  visitCounts?: Record<string, number>; // city_id → 방문 횟수
+}
+
+// 방문 횟수별 지역 고유색 적용 (hex opacity)
+function visitFill(count: number, color: string, stroke: string): string {
+  if (count === 0) return "#FFFFFF";
+  if (count <= 2)  return color + "55"; // ~33%
+  if (count <= 5)  return color + "99"; // ~60%
+  if (count <= 8)  return color + "CC"; // ~80%
+  return stroke;                         // 9+: stroke색으로 가장 진하게
 }
 
 const WIDTH = 400;
@@ -84,10 +94,11 @@ export default function RegionDetailMap({
   provinceName,
   provinceEmoji,
   provinceColor,
+  provinceStroke = "#94A3B8",
   isMetro,
   onSelectCity,
   onBack,
-  visitedCities = [],
+  visitCounts = {},
 }: RegionDetailMapProps) {
   const [groups, setGroups] = useState<CityGroup[]>([]);
   const [pathMap, setPathMap] = useState<Record<string, string>>({});
@@ -219,26 +230,31 @@ export default function RegionDetailMap({
 
             {groups.map((group) => {
               const isHovered = hoveredKey === group.key;
-              const isVisited = visitedCities.includes(group.cityId);
+              const count = visitCounts[group.cityId] ?? 0;
+              const isVisited = count > 0;
               const centroid = centroidMap[group.key];
               if (!pathMap[group.key]) return null;
 
-              // 라벨: 광역시는 구 이름 그대로, 도는 시/군 suffix 유지
               const displayName = isMetro
-                ? group.name                        // 중구, 해운대구 그대로
-                : group.name.replace(/[시군]$/, ""); // 수원시→수원, 홍천군→홍천
+                ? group.name
+                : group.name.replace(/[시군]$/, "");
 
               const labelOverride = SVG_LABEL_OVERRIDES[provinceCode]?.[group.name];
               const lx = labelOverride ? labelOverride[0] : centroid?.[0];
               const ly = labelOverride ? labelOverride[1] : centroid?.[1];
 
+              const baseFill = visitFill(count, provinceColor, provinceStroke);
+              const fill = isHovered
+                ? (isVisited ? provinceStroke : provinceColor)
+                : baseFill;
+
               return (
                 <g key={group.key}>
                   <path
                     d={pathMap[group.key]}
-                    fill={isVisited ? "#FB7185" : isHovered ? provinceColor : "#FFFFFF"}
-                    stroke={isHovered ? "#94A3B8" : "#CBD5E1"}
-                    strokeWidth={isHovered ? 1.5 : 0.8}
+                    fill={fill}
+                    stroke={isHovered ? provinceStroke : (isVisited ? provinceColor : "#CBD5E1")}
+                    strokeWidth={isHovered ? 1.5 : (isVisited ? 1 : 0.8)}
                     strokeLinejoin="round"
                     style={{ cursor: "pointer", transition: "fill 0.15s ease" }}
                     onClick={() => onSelectCity(group.cityId, group.name)}
@@ -253,7 +269,7 @@ export default function RegionDetailMap({
                       dominantBaseline="middle"
                       fontSize={isMetro ? 8 : 9}
                       fontWeight="bold"
-                      fill={isVisited ? "white" : isHovered ? "#1E293B" : "#94A3B8"}
+                      fill={isVisited ? "#1E293B" : isHovered ? "#1E293B" : "#94A3B8"}
                       style={{ pointerEvents: "none", userSelect: "none" }}
                       paintOrder="stroke"
                       stroke="rgba(255,255,255,0.9)"
@@ -274,7 +290,7 @@ export default function RegionDetailMap({
         <p className="text-xs text-gray-400 mb-3 font-medium">전체 목록</p>
         <div className="grid grid-cols-3 gap-2">
           {groups.map((group) => {
-            const isVisited = visitedCities.includes(group.cityId);
+            const isVisited = (visitCounts[group.cityId] ?? 0) > 0;
             return (
               <motion.button
                 key={group.key}

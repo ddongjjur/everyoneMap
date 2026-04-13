@@ -107,6 +107,7 @@ export type Database = {
         Row: {
           id: string;
           couple_id: string;
+          user_id: string | null;
           small_count: number;
           large_exchanged: number;
           updated_at: string;
@@ -114,6 +115,7 @@ export type Database = {
         Insert: {
           id?: string;
           couple_id: string;
+          user_id?: string | null;
           small_count?: number;
           large_exchanged?: number;
           updated_at?: string;
@@ -129,6 +131,7 @@ export type Database = {
         Row: {
           id: string;
           couple_id: string;
+          user_id: string | null;
           grape_count: number;
           issued_at: string;
           used: boolean;
@@ -139,6 +142,7 @@ export type Database = {
         Insert: {
           id?: string;
           couple_id: string;
+          user_id?: string | null;
           grape_count?: number;
           issued_at?: string;
           used?: boolean;
@@ -159,6 +163,7 @@ export type Database = {
           id: string;
           couple_id: string;
           requester_id: string;
+          target_user_id: string | null;
           status: string;
           created_at: string;
         };
@@ -166,6 +171,7 @@ export type Database = {
           id?: string;
           couple_id: string;
           requester_id: string;
+          target_user_id?: string | null;
           status?: string;
           created_at?: string;
         };
