@@ -31,21 +31,28 @@ export async function POST(req: Request) {
   const payload = JSON.stringify({ title, body });
   const staleIds: string[] = [];
 
-  await Promise.all(
+  const results = await Promise.allSettled(
     subs.map(async (sub) => {
-      try {
-        await webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          payload
-        );
-      } catch (err: unknown) {
-        const status = (err as { statusCode?: number }).statusCode;
-        if (status === 410 || status === 404) {
-          staleIds.push(sub.id);
-        }
-      }
+      await webpush.sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        payload
+      );
+      return sub.id;
     })
   );
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "rejected") {
+      const status = (result.reason as { statusCode?: number }).statusCode;
+      if (status === 410 || status === 404) {
+        staleIds.push(subs[i].id);
+      } else {
+        console.error(`push failed [${subs[i].id}]:`, result.reason);
+        return NextResponse.json({ error: String(result.reason) }, { status: 500 });
+      }
+    }
+  }
 
   if (staleIds.length > 0) {
     await supabase.from("push_subscriptions").delete().in("id", staleIds);
