@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Plus, ArrowRight, MapPin, Camera, CalendarDays, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { buildMessage } from "@/lib/pushMessages";
 import {
   DndContext,
   closestCenter,
@@ -160,7 +161,13 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
   const [loadingDates, setLoadingDates] = useState(true);
   const [mounted, setMounted] = useState(false);
 
+  const [photosChanged, setPhotosChanged] = useState(false);
+  const [memoChanged, setMemoChanged] = useState(false);
+  const [newCityInserted, setNewCityInserted] = useState(false);
+
   const coupleIdRef = useRef<string | null>(null);
+  const partnerUserIdRef = useRef<string | null>(null);
+  const partnerNameRef = useRef<string>("");
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -170,17 +177,23 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   );
 
-  const getCoupleId = async () => {
+  const getCoupleId = useCallback(async () => {
     if (coupleIdRef.current) return coupleIdRef.current;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const { data } = await supabase
-      .from("couples").select("id")
+      .from("couples")
+      .select("id, creator_id, partner_id, creator_name, partner_name")
       .or(`creator_id.eq.${user.id},partner_id.eq.${user.id}`)
       .maybeSingle();
     coupleIdRef.current = data?.id ?? null;
+    if (data) {
+      const isCreator = data.creator_id === user.id;
+      partnerUserIdRef.current = isCreator ? (data.partner_id ?? null) : (data.creator_id ?? null);
+      partnerNameRef.current = isCreator ? (data.partner_name ?? "") : (data.creator_name ?? "");
+    }
     return coupleIdRef.current;
-  };
+  }, [supabase]);
 
   useEffect(() => {
     const load = async () => {
@@ -196,7 +209,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
       setLoadingDates(false);
     };
     load();
-  }, [cityId]);
+  }, [cityId, getCoupleId]);
 
   useEffect(() => {
     if (!selectedDate) return;
@@ -247,6 +260,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
       setMemo("");
       setPhotos([]);
       setPlaces([]);
+      setNewCityInserted(true);
     }
     setShowDatePicker(false);
   };
@@ -268,6 +282,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
     if (!recordId) return;
     await supabase.from("city_records").update({ memo }).eq("id", recordId);
     setDateRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, memo } : r)));
+    setMemoChanged(true);
   };
 
   const handleAddPhoto = () => {
@@ -289,6 +304,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
           if (photoRow) {
             const { data: signed } = await supabase.storage.from("couple-photos").createSignedUrl(path, 3600);
             setPhotos((prev) => [...prev, { ...photoRow, url: signed?.signedUrl }]);
+            setPhotosChanged(true);
           }
         }
       }
@@ -304,6 +320,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
     await supabase.storage.from("couple-photos").remove([photo.storage_path]);
     await supabase.from("photos").delete().eq("id", photoId);
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    setPhotosChanged(true);
   };
 
   // 사진 순서 변경
@@ -334,6 +351,31 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
     setPlaces((prev) => prev.filter((p) => p.id !== placeId));
   };
 
+  const sendPushToPartner = (title: string, body: string) => {
+    if (!partnerUserIdRef.current) return;
+    fetch("/api/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: partnerUserIdRef.current, title, body }),
+    });
+  };
+
+  const handleBack = () => {
+    if (newCityInserted) {
+      const { title, body } = buildMessage("city_new", partnerNameRef.current || "파트너", cityName);
+      sendPushToPartner(title, body);
+    }
+    if (photosChanged && !newCityInserted) {
+      const { title, body } = buildMessage("photo_edited", partnerNameRef.current || "파트너", cityName);
+      sendPushToPartner(title, body);
+    }
+    if (memoChanged && !newCityInserted) {
+      const { title, body } = buildMessage("memo_edited", partnerNameRef.current || "파트너", cityName);
+      sendPushToPartner(title, body);
+    }
+    onBack();
+  };
+
   // 장소 순서 변경
   const handlePlacesDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -362,7 +404,7 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
       {/* 헤더 */}
       <div className="sticky top-0 bg-white/90 backdrop-blur-sm border-b border-gray-100 z-10">
         <div className="px-4 pt-3 pb-2 flex items-center gap-3">
-          <motion.button whileTap={{ scale: 0.9 }} onClick={onBack}
+          <motion.button whileTap={{ scale: 0.9 }} onClick={handleBack}
             className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
             <ChevronLeft size={18} className="text-gray-600" />
           </motion.button>

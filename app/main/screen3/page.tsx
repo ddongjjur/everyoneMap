@@ -4,9 +4,14 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LogOut, Pencil, Check } from "lucide-react";
+import { LogOut, Pencil, Check, Bell, BellOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  subscribePush,
+  unsubscribePush,
+  getNotificationStatus,
+} from "@/lib/pushNotification";
 
 interface CoupleInfo {
   id: string;
@@ -23,6 +28,10 @@ export default function Screen3Page() {
   const [myRole, setMyRole] = useState<"creator" | "partner" | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+
+  const [notifStatus, setNotifStatus] = useState<NotificationPermission>("default");
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -42,6 +51,19 @@ export default function Screen3Page() {
       setNameInput(role === "creator" ? (data.creator_name ?? "") : (data.partner_name ?? ""));
     };
     load();
+
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setNotifStatus(getNotificationStatus());
+    }
+
+    const checkSubscription = async () => {
+      if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      if (!reg) return;
+      const sub = await reg.pushManager.getSubscription();
+      setIsSubscribed(!!sub);
+    };
+    checkSubscription();
   }, []);
 
   const handleSaveName = async () => {
@@ -55,6 +77,24 @@ export default function Screen3Page() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  const handleToggleNotif = async () => {
+    if (toggling || notifStatus === "denied") return;
+    setToggling(true);
+    try {
+      if (isSubscribed) {
+        await unsubscribePush(supabase);
+        setIsSubscribed(false);
+      } else {
+        await subscribePush(supabase);
+        const newStatus = getNotificationStatus();
+        setNotifStatus(newStatus);
+        if (newStatus === "granted") setIsSubscribed(true);
+      }
+    } finally {
+      setToggling(false);
+    }
   };
 
   const myName = myRole === "creator" ? couple?.creator_name : couple?.partner_name;
@@ -74,7 +114,7 @@ export default function Screen3Page() {
         </div>
 
         {/* 커플 이름 카드 */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col gap-5">
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col gap-5 mb-4">
 
           {/* 내 이름 */}
           <div>
@@ -127,6 +167,51 @@ export default function Screen3Page() {
             </span>
           </div>
         </div>
+
+        {/* 알림 설정 카드 */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-rose-50 flex items-center justify-center">
+                {isSubscribed ? (
+                  <Bell size={16} className="text-rose-400" />
+                ) : (
+                  <BellOff size={16} className="text-gray-300" />
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-700">알림 설정</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {notifStatus === "denied"
+                    ? "브라우저 설정에서 허용해주세요"
+                    : isSubscribed
+                    ? "파트너 활동 알림 켜짐"
+                    : "파트너 활동 알림 꺼짐"}
+                </p>
+              </div>
+            </div>
+
+            {/* 토글 스위치 */}
+            <motion.button
+              onClick={handleToggleNotif}
+              disabled={toggling || notifStatus === "denied"}
+              className="relative w-12 h-6 rounded-full transition-colors disabled:opacity-40"
+              style={{ backgroundColor: isSubscribed ? "#fb7185" : "#e5e7eb" }}
+              whileTap={{ scale: 0.92 }}
+            >
+              <motion.div
+                className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm"
+                animate={{ left: isSubscribed ? "calc(100% - 22px)" : "2px" }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            </motion.button>
+          </div>
+        </motion.div>
       </motion.div>
 
       {/* 로그아웃 버튼 */}

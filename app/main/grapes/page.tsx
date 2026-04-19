@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { createPortal } from "react-dom";
 import { Minus, Plus } from "lucide-react";
+import { buildMessage } from "@/lib/pushMessages";
 
 const SMALL_PER_LARGE = 25;
 const COUPON_UNIT = 100000;
@@ -178,6 +179,10 @@ export default function Screen2Page() {
   const [myUserId, setMyUserId]             = useState<string | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<GrapeRequest | null>(null); // 상대방 요청
 
+  const [partnerUserId, setPartnerUserId] = useState<string | null>(null);
+  const [partnerName, setPartnerName]     = useState<string>("");
+  const [myName, setMyName]               = useState<string>("");
+
   const [adding, setAdding]         = useState(false);
   const [approving, setApproving]   = useState(false);
   const [exchanging, setExchanging] = useState(false);
@@ -214,11 +219,20 @@ export default function Screen2Page() {
       setMyUserId(user.id);
 
       const { data: couple } = await supabase
-        .from("couples").select("id")
+        .from("couples")
+        .select("id, creator_id, partner_id, creator_name, partner_name")
         .or(`creator_id.eq.${user.id},partner_id.eq.${user.id}`)
         .maybeSingle();
       if (!couple) return;
       setCoupleId(couple.id);
+
+      const isCreator = couple.creator_id === user.id;
+      const pid = isCreator ? couple.partner_id : couple.creator_id;
+      const pname = isCreator ? (couple.partner_name ?? "") : (couple.creator_name ?? "");
+      const mname = isCreator ? (couple.creator_name ?? "") : (couple.partner_name ?? "");
+      setPartnerUserId(pid ?? null);
+      setPartnerName(pname);
+      setMyName(mname);
 
       // 내 판만 upsert (couple_id + user_id)
       await supabase.from("grapes")
@@ -283,6 +297,14 @@ export default function Screen2Page() {
   const smallOnHand   = progress % 5;
   const mediumOnHand  = Math.floor(progress / 5);
 
+  const sendPush = (userId: string, title: string, body: string) => {
+    fetch("/api/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, title, body }),
+    });
+  };
+
   // 포도알 추가 요청 — 내 판에 추가 요청, 상대방 승인 필요
   const handleRequestGrape = async () => {
     if (!coupleId || !myUserId || adding || pendingRequest) return;
@@ -293,6 +315,10 @@ export default function Screen2Page() {
       target_user_id: myUserId, // 내 판에 추가
       status: "pending",
     });
+    if (partnerUserId && partnerName) {
+      const { title, body } = buildMessage("grape_request", myName || "파트너");
+      sendPush(partnerUserId, title, body);
+    }
     setAdding(false);
   };
 
@@ -313,6 +339,9 @@ export default function Screen2Page() {
     // 승인된 대상이 나 자신이면 로컬 상태도 업데이트
     if (targetId === myUserId) setSmallCount((n) => n + 1);
 
+    const { title, body } = buildMessage("grape_approved", myName || "파트너");
+    sendPush(incomingRequest.requester_id, title, body);
+
     setIncomingRequest(null);
     setApproving(false);
   };
@@ -322,6 +351,10 @@ export default function Screen2Page() {
     if (!incomingRequest) return;
     await supabase.from("grape_requests")
       .update({ status: "rejected" }).eq("id", incomingRequest.id);
+
+    const { title, body } = buildMessage("grape_rejected", myName || "파트너");
+    sendPush(incomingRequest.requester_id, title, body);
+
     setIncomingRequest(null);
   };
 
