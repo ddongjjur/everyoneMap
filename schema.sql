@@ -165,6 +165,57 @@ CREATE POLICY "커플 멤버만 접근" ON public.grape_requests
       AND (creator_id = auth.uid() OR partner_id = auth.uid()))
   );
 
+-- 요청자당 pending 요청은 커플별 1건만 허용 (연타로 인한 중복 요청 방지)
+CREATE UNIQUE INDEX grape_requests_one_pending_per_requester
+  ON public.grape_requests (couple_id, requester_id)
+  WHERE status = 'pending';
+
+-- 포도 요청 승인: 상태 변경과 small_count +1 을 한 트랜잭션에서 처리
+-- SECURITY INVOKER 라서 RLS 가 그대로 적용됨. 승인 성공 시 true, 이미 처리됐거나 권한이 없으면 false
+CREATE OR REPLACE FUNCTION public.approve_grape_request(p_request_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  v_req public.grape_requests%ROWTYPE;
+  v_target UUID;
+BEGIN
+  UPDATE public.grape_requests gr
+     SET status = 'approved'
+   WHERE gr.id = p_request_id
+     AND gr.status = 'pending'
+     AND gr.requester_id <> auth.uid()
+     AND EXISTS (
+       SELECT 1 FROM public.couples c
+       WHERE c.id = gr.couple_id
+         AND (c.creator_id = auth.uid() OR c.partner_id = auth.uid())
+     )
+  RETURNING * INTO v_req;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  v_target := COALESCE(v_req.target_user_id, v_req.requester_id);
+
+  UPDATE public.grapes
+     SET small_count = small_count + 1,
+         updated_at = NOW()
+   WHERE couple_id = v_req.couple_id
+     AND user_id = v_target;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'grapes row not found for user %', v_target;
+  END IF;
+
+  RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.approve_grape_request(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.approve_grape_request(UUID) TO authenticated;
+
 -- 푸시 알림 구독 테이블
 CREATE TABLE public.push_subscriptions (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,

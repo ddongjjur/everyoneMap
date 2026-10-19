@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { createPortal } from "react-dom";
@@ -188,6 +188,8 @@ export default function Screen2Page() {
   const [exchanging, setExchanging] = useState(false);
   const [using, setUsing]           = useState(false);
   const [mounted, setMounted]       = useState(false);
+  // 연타 방지: state 는 다음 렌더 전까지 갱신되지 않으므로 ref 로 동기 잠금
+  const requestLockRef = useRef(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -307,40 +309,52 @@ export default function Screen2Page() {
 
   // 포도알 추가 요청 — 내 판에 추가 요청, 상대방 승인 필요
   const handleRequestGrape = async () => {
-    if (!coupleId || !myUserId || adding || pendingRequest) return;
+    if (!coupleId || !myUserId || requestLockRef.current || pendingRequest) return;
+    requestLockRef.current = true;
     setAdding(true);
-    await supabase.from("grape_requests").insert({
-      couple_id: coupleId,
-      requester_id: myUserId,
-      target_user_id: myUserId, // 내 판에 추가
-      status: "pending",
-    });
-    if (partnerUserId && partnerName) {
-      const { title, body } = buildMessage("grape_request", myName || "파트너");
-      sendPush(partnerUserId, title, body);
+
+    const { data, error } = await supabase.from("grape_requests")
+      .insert({
+        couple_id: coupleId,
+        requester_id: myUserId,
+        target_user_id: myUserId, // 내 판에 추가
+        status: "pending",
+      })
+      .select("id, requester_id, target_user_id, status")
+      .single();
+
+    if (data) {
+      setPendingRequest(data as GrapeRequest);
+      if (partnerUserId && partnerName) {
+        const { title, body } = buildMessage("grape_request", myName || "파트너");
+        sendPush(partnerUserId, title, body);
+      }
+    } else if (error?.code === "23505") {
+      // 이미 대기 중인 요청이 있음 (DB unique index) — 알림 없이 상태만 동기화
+      await loadPendingRequest(coupleId, myUserId);
     }
+
     setAdding(false);
+    requestLockRef.current = false;
   };
 
-  // 승인 — target_user_id 의 grapes 레코드를 업데이트
+  // 승인 — 상태 변경과 small_count +1 을 DB 함수에서 원자적으로 처리 (중복 승인 시 false)
   const handleApprove = async () => {
     if (!incomingRequest || !coupleId || approving) return;
     setApproving(true);
-    const targetId = incomingRequest.target_user_id ?? incomingRequest.requester_id;
 
-    await supabase.from("grapes")
-      .update({ small_count: smallCount + 1, updated_at: new Date().toISOString() })
-      .eq("couple_id", coupleId)
-      .eq("user_id", targetId);
+    const { data: approved } = await supabase.rpc("approve_grape_request", {
+      p_request_id: incomingRequest.id,
+    });
 
-    await supabase.from("grape_requests")
-      .update({ status: "approved" }).eq("id", incomingRequest.id);
+    if (approved === true) {
+      const targetId = incomingRequest.target_user_id ?? incomingRequest.requester_id;
+      // 승인된 대상이 나 자신이면 로컬 상태도 업데이트
+      if (targetId === myUserId) setSmallCount((n) => n + 1);
 
-    // 승인된 대상이 나 자신이면 로컬 상태도 업데이트
-    if (targetId === myUserId) setSmallCount((n) => n + 1);
-
-    const { title, body } = buildMessage("grape_approved", myName || "파트너");
-    sendPush(incomingRequest.requester_id, title, body);
+      const { title, body } = buildMessage("grape_approved", myName || "파트너");
+      sendPush(incomingRequest.requester_id, title, body);
+    }
 
     setIncomingRequest(null);
     setApproving(false);
