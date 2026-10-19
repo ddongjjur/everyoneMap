@@ -230,6 +230,50 @@ ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "본인 구독만 관리" ON public.push_subscriptions
   FOR ALL USING (auth.uid() = user_id);
 
+-- 같은 커플인 상대방의 푸시 구독만 조회 (/api/push/send 에서 사용)
+-- RLS 때문에 상대방 구독은 직접 SELECT 할 수 없어서 SECURITY DEFINER 함수로 커플 검사 후 반환
+CREATE OR REPLACE FUNCTION public.get_partner_push_subscriptions(p_target_user_id UUID)
+RETURNS TABLE (sub_id UUID, endpoint TEXT, p256dh TEXT, auth_key TEXT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+  FROM public.push_subscriptions ps
+  WHERE ps.user_id = p_target_user_id
+    AND EXISTS (
+      SELECT 1 FROM public.couples c
+      WHERE (c.creator_id = auth.uid() AND c.partner_id = p_target_user_id)
+         OR (c.partner_id = auth.uid() AND c.creator_id = p_target_user_id)
+    );
+$$;
+
+-- 만료된(404/410) 상대방 구독 삭제, 삭제한 건수 반환
+CREATE OR REPLACE FUNCTION public.delete_partner_push_subscriptions(p_ids UUID[])
+RETURNS INTEGER
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH d AS (
+    DELETE FROM public.push_subscriptions ps
+    WHERE ps.id = ANY(p_ids)
+      AND EXISTS (
+        SELECT 1 FROM public.couples c
+        WHERE (c.creator_id = auth.uid() AND c.partner_id = ps.user_id)
+           OR (c.partner_id = auth.uid() AND c.creator_id = ps.user_id)
+      )
+    RETURNING 1
+  )
+  SELECT count(*)::int FROM d;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_partner_push_subscriptions(UUID) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.delete_partner_push_subscriptions(UUID[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_partner_push_subscriptions(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_partner_push_subscriptions(UUID[]) TO authenticated;
+
 -- =============================================
 -- Supabase Storage: 사진 버킷
 -- Dashboard > Storage > New bucket

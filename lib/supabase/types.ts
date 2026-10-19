@@ -215,6 +215,19 @@ export type Database = {
         Args: { p_request_id: string };
         Returns: boolean;
       };
+      get_partner_push_subscriptions: {
+        Args: { p_target_user_id: string };
+        Returns: {
+          sub_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth_key: string;
+        }[];
+      };
+      delete_partner_push_subscriptions: {
+        Args: { p_ids: string[] };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
