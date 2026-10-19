@@ -16,6 +16,8 @@ export type Database = {
           code: string;
           creator_id?: string | null;
           partner_id?: string | null;
+          creator_name?: string | null;
+          partner_name?: string | null;
           created_at?: string;
         };
         Update: {
@@ -23,6 +25,8 @@ export type Database = {
           code?: string;
           creator_id?: string | null;
           partner_id?: string | null;
+          creator_name?: string | null;
+          partner_name?: string | null;
           created_at?: string;
         };
         Relationships: [];

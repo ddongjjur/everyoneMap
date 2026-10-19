@@ -1,28 +1,38 @@
 -- =============================================
 -- 우리의 지도 - Supabase Schema
--- Supabase Dashboard > SQL Editor 에서 실행
+-- 실제 DB(프로젝트 zridfeaxzfbzvwsfpzzd) 상태를 기준으로 동기화한 스냅샷
+-- 새 프로젝트 셋업 시 Supabase Dashboard > SQL Editor 에서 실행
 -- =============================================
 
 -- 커플 테이블
 CREATE TABLE public.couples (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  code        VARCHAR(6) UNIQUE NOT NULL,
-  creator_id  UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  partner_id  UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  created_at  TIMESTAMPTZ DEFAULT NOW()
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  code         VARCHAR(6) UNIQUE NOT NULL,
+  creator_id   UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  partner_id   UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  creator_name VARCHAR(50),
+  partner_name VARCHAR(50),
+  created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE public.couples ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "자신의 커플만 조회" ON public.couples
-  FOR SELECT USING (auth.uid() = creator_id OR auth.uid() = partner_id);
+-- partner_id IS NULL 인 커플은 코드 입력으로 참가하기 위해 누구나 조회 가능
+CREATE POLICY "커플 조회" ON public.couples
+  FOR SELECT USING (
+    auth.uid() = creator_id OR auth.uid() = partner_id OR partner_id IS NULL
+  );
 
 CREATE POLICY "커플 생성" ON public.couples
   FOR INSERT WITH CHECK (auth.uid() = creator_id);
 
-CREATE POLICY "파트너 참가 (partner_id 업데이트)" ON public.couples
+CREATE POLICY "파트너 참가" ON public.couples
   FOR UPDATE USING (partner_id IS NULL)
   WITH CHECK (auth.uid() = partner_id);
+
+CREATE POLICY "커플 멤버가 이름 수정" ON public.couples
+  FOR UPDATE USING (auth.uid() = creator_id OR auth.uid() = partner_id)
+  WITH CHECK (auth.uid() = creator_id OR auth.uid() = partner_id);
 
 -- 도시 기록 테이블
 CREATE TABLE public.city_records (
@@ -34,7 +44,7 @@ CREATE TABLE public.city_records (
   visit_date  DATE NOT NULL DEFAULT CURRENT_DATE,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(couple_id, city_id, visit_date)
+  CONSTRAINT city_records_couple_id_city_id_date_key UNIQUE(couple_id, city_id, visit_date)
 );
 
 ALTER TABLE public.city_records ENABLE ROW LEVEL SECURITY;
@@ -103,12 +113,15 @@ CREATE TRIGGER city_records_updated_at
   BEFORE UPDATE ON public.city_records
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- 포도알 테이블
+-- 포도알 테이블 (커플 내 사용자별 1행)
 CREATE TABLE public.grapes (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  couple_id   UUID REFERENCES public.couples(id) ON DELETE CASCADE UNIQUE NOT NULL,
-  small_count INTEGER DEFAULT 0 NOT NULL,
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  couple_id       UUID REFERENCES public.couples(id) ON DELETE CASCADE NOT NULL,
+  user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  small_count     INTEGER DEFAULT 0 NOT NULL,
+  large_exchanged INTEGER DEFAULT 0 NOT NULL,
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT grapes_couple_id_user_id_key UNIQUE(couple_id, user_id)
 );
 ALTER TABLE public.grapes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "커플 멤버만 접근" ON public.grapes
@@ -119,9 +132,15 @@ CREATE POLICY "커플 멤버만 접근" ON public.grapes
 
 -- 쿠폰 테이블
 CREATE TABLE public.coupons (
-  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  couple_id  UUID REFERENCES public.couples(id) ON DELETE CASCADE NOT NULL,
-  issued_at  TIMESTAMPTZ DEFAULT NOW()
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  couple_id   UUID REFERENCES public.couples(id) ON DELETE CASCADE NOT NULL,
+  user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  grape_count INTEGER DEFAULT 1 NOT NULL,
+  issued_at   TIMESTAMPTZ DEFAULT NOW(),
+  used        BOOLEAN DEFAULT false NOT NULL,
+  used_at     TIMESTAMPTZ,
+  used_place  VARCHAR(100),
+  used_amount INTEGER
 );
 ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "커플 멤버만 접근" ON public.coupons
@@ -130,9 +149,61 @@ CREATE POLICY "커플 멤버만 접근" ON public.coupons
       AND (creator_id = auth.uid() OR partner_id = auth.uid()))
   );
 
+-- 포도 요청 테이블
+CREATE TABLE public.grape_requests (
+  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  couple_id      UUID REFERENCES public.couples(id) ON DELETE CASCADE NOT NULL,
+  requester_id   UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  target_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  status         VARCHAR(10) DEFAULT 'pending' NOT NULL,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.grape_requests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "커플 멤버만 접근" ON public.grape_requests
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.couples WHERE id = couple_id
+      AND (creator_id = auth.uid() OR partner_id = auth.uid()))
+  );
+
+-- 푸시 알림 구독 테이블
+CREATE TABLE public.push_subscriptions (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  endpoint   TEXT NOT NULL,
+  p256dh     TEXT NOT NULL,
+  auth       TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT push_subscriptions_user_id_endpoint_key UNIQUE(user_id, endpoint)
+);
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "본인 구독만 관리" ON public.push_subscriptions
+  FOR ALL USING (auth.uid() = user_id);
+
 -- =============================================
--- Supabase Storage: 사진 버킷 생성
+-- Supabase Storage: 사진 버킷
 -- Dashboard > Storage > New bucket
 -- 버킷명: couple-photos
 -- Public: false (RLS로 접근 제어)
+-- 업로드 경로 규칙: {city_record_id}/{파일명}
 -- =============================================
+CREATE POLICY "커플 멤버만 업로드" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'couple-photos'
+    AND EXISTS (
+      SELECT 1 FROM public.city_records cr
+      JOIN public.couples c ON cr.couple_id = c.id
+      WHERE cr.id::text = (storage.foldername(name))[1]
+        AND (c.creator_id = auth.uid() OR c.partner_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "커플 멤버만 조회" ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'couple-photos'
+    AND EXISTS (
+      SELECT 1 FROM public.city_records cr
+      JOIN public.couples c ON cr.couple_id = c.id
+      WHERE cr.id::text = (storage.foldername(name))[1]
+        AND (c.creator_id = auth.uid() OR c.partner_id = auth.uid())
+    )
+  );
