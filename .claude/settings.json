@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/codeit_intern/everyoneMap && npm run build 2>&1 | tail -5"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npx tsc --noEmit 2>&1 | tail -5"
           }
         ]
       }
