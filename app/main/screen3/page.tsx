@@ -30,6 +30,7 @@ export default function Screen3Page() {
   const [nameInput, setNameInput] = useState("");
 
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>("default");
+  const [notifError, setNotifError] = useState("");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [toggling, setToggling] = useState(false);
 
@@ -82,15 +83,16 @@ export default function Screen3Page() {
   const handleToggleNotif = async () => {
     if (toggling || notifStatus === "denied") return;
     setToggling(true);
+    setNotifError("");
     try {
       if (isSubscribed) {
         await unsubscribePush(supabase);
         setIsSubscribed(false);
       } else {
-        await subscribePush(supabase);
-        const newStatus = getNotificationStatus();
-        setNotifStatus(newStatus);
-        if (newStatus === "granted") setIsSubscribed(true);
+        const result = await subscribePush(supabase);
+        setNotifStatus(getNotificationStatus());
+        if (result.ok) setIsSubscribed(true);
+        else setNotifError(result.reason);
       }
     } finally {
       setToggling(false);
@@ -193,6 +195,9 @@ export default function Screen3Page() {
                     ? "파트너 활동 알림 켜짐"
                     : "파트너 활동 알림 꺼짐"}
                 </p>
+                {notifError && (
+                  <p className="text-xs text-rose-400 mt-1 break-keep">{notifError}</p>
+                )}
               </div>
             </div>
 
