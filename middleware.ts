@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 인증 불필요 경로
-  const publicPaths = ["/login", "/auth/callback"];
+  const publicPaths = ["/login", "/auth/callback", "/privacy"];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   // 비로그인 → 로그인 페이지로
