@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { createPortal } from "react-dom";
 import { Minus, Plus } from "lucide-react";
-import { buildMessage } from "@/lib/pushMessages";
+import { buildMessage, type PushMessage } from "@/lib/pushMessages";
 
 const SMALL_PER_LARGE = 25;
 const COUPON_UNIT = 100000;
@@ -299,11 +299,11 @@ export default function Screen2Page() {
   const smallOnHand   = progress % 5;
   const mediumOnHand  = Math.floor(progress / 5);
 
-  const sendPush = (userId: string, title: string, body: string) => {
+  const sendPush = (userId: string, message: PushMessage) => {
     fetch("/api/push/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, title, body }),
+      body: JSON.stringify({ userId, ...message }),
     });
   };
 
@@ -326,8 +326,7 @@ export default function Screen2Page() {
     if (data) {
       setPendingRequest(data as GrapeRequest);
       if (partnerUserId && partnerName) {
-        const { title, body } = buildMessage("grape_request", myName || "파트너");
-        sendPush(partnerUserId, title, body);
+        sendPush(partnerUserId, buildMessage("grape_request", myName || "파트너"));
       }
     } else if (error?.code === "23505") {
       // 이미 대기 중인 요청이 있음 (DB unique index) — 알림 없이 상태만 동기화
@@ -352,8 +351,7 @@ export default function Screen2Page() {
       // 승인된 대상이 나 자신이면 로컬 상태도 업데이트
       if (targetId === myUserId) setSmallCount((n) => n + 1);
 
-      const { title, body } = buildMessage("grape_approved", myName || "파트너");
-      sendPush(incomingRequest.requester_id, title, body);
+      sendPush(incomingRequest.requester_id, buildMessage("grape_approved", myName || "파트너"));
     }
 
     setIncomingRequest(null);
@@ -366,8 +364,7 @@ export default function Screen2Page() {
     await supabase.from("grape_requests")
       .update({ status: "rejected" }).eq("id", incomingRequest.id);
 
-    const { title, body } = buildMessage("grape_rejected", myName || "파트너");
-    sendPush(incomingRequest.requester_id, title, body);
+    sendPush(incomingRequest.requester_id, buildMessage("grape_rejected", myName || "파트너"));
 
     setIncomingRequest(null);
   };

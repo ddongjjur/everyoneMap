@@ -18,15 +18,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { userId, title, body } = (await req.json()) as {
+  const { userId, title, body, url } = (await req.json()) as {
     userId: string;
     title: string;
     body: string;
+    url?: string;
   };
 
   if (!userId || !title || !body) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
+
+  // 알림 클릭 시 이동할 경로는 앱 내부 경로("/..." 이면서 "//" 로 시작하지 않는 것)만 허용
+  const safeUrl =
+    typeof url === "string" && url.startsWith("/") && !url.startsWith("//") ? url : undefined;
 
   webpush.setVapidDetails(
     process.env.VAPID_EMAIL!,
@@ -48,7 +53,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ sent: 0, failed: 0 });
   }
 
-  const payload = JSON.stringify({ title, body });
+  const payload = JSON.stringify({ title, body, url: safeUrl });
   const staleIds: string[] = [];
   let failed = 0;
 

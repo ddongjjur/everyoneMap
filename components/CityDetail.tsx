@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Plus, ArrowRight, MapPin, Camera, CalendarDays, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { buildMessage } from "@/lib/pushMessages";
+import { buildMessage, type PushMessage } from "@/lib/pushMessages";
 import {
   DndContext,
   closestCenter,
@@ -351,27 +351,24 @@ export default function CityDetail({ cityId, cityName, cityEmoji, onBack }: City
     setPlaces((prev) => prev.filter((p) => p.id !== placeId));
   };
 
-  const sendPushToPartner = (title: string, body: string) => {
+  const sendPushToPartner = (message: PushMessage) => {
     if (!partnerUserIdRef.current) return;
     fetch("/api/push/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: partnerUserIdRef.current, title, body }),
+      body: JSON.stringify({ userId: partnerUserIdRef.current, ...message }),
     });
   };
 
   const handleBack = () => {
     if (newCityInserted) {
-      const { title, body } = buildMessage("city_new", partnerNameRef.current || "파트너", cityName);
-      sendPushToPartner(title, body);
+      sendPushToPartner(buildMessage("city_new", partnerNameRef.current || "파트너", cityName));
     }
     if (photosChanged && !newCityInserted) {
-      const { title, body } = buildMessage("photo_edited", partnerNameRef.current || "파트너", cityName);
-      sendPushToPartner(title, body);
+      sendPushToPartner(buildMessage("photo_edited", partnerNameRef.current || "파트너", cityName));
     }
     if (memoChanged && !newCityInserted) {
-      const { title, body } = buildMessage("memo_edited", partnerNameRef.current || "파트너", cityName);
-      sendPushToPartner(title, body);
+      sendPushToPartner(buildMessage("memo_edited", partnerNameRef.current || "파트너", cityName));
     }
     onBack();
   };
